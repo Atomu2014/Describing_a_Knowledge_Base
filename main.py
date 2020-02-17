@@ -37,8 +37,8 @@ parser.add_argument('--output_dir', type=str,  default='0216',
                     help='path to save the final model')
 parser.add_argument('--mode', type=int,  default=0,
                     help='train(0)/predict_individual(1)/predict_file(2)/compute score(3) /beam search score (4)or keep train (5)')
-parser.add_argument('--epochs', type=int, default=1)
-parser.add_argument('--batch_size', type=int, default=20)
+parser.add_argument('--epochs', type=int, default=20)
+parser.add_argument('--batch_size', type=int, default=300)
 parser.add_argument('--lr', type=float, default=0.001)
 args = parser.parse_args()
 args.output_dir = os.path.join('output', args.output_dir)
