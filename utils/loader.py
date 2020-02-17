@@ -99,8 +99,7 @@ class Vocabulary:
 
 
 class Table2text_seq:
-    def __init__(self, mode, type=0, batch_size=128, USE_CUDA=torch.cuda.is_available()):
-        self.type = type
+    def __init__(self, mode, batch_size=128, USE_CUDA=torch.cuda.is_available()):
         self.vocab = None
         # self.target_vocab = None
         self.text_len = 0
@@ -109,20 +108,11 @@ class Table2text_seq:
         self.batch_size = batch_size
         self.USE_CUDA = USE_CUDA
         if mode == 0:
-            if self.type == 0:
-                path = "train_P.pkl"
-            else:
-                path = "train_A.pkl"
+            path = "train_P.pkl"
         elif mode == 1:
-            if self.type == 0:
-                path = "valid_P.pkl"
-            else:
-                path = "valid_A.pkl"
+            path = "valid_P.pkl"
         else:
-            if self.type == 0:
-                path = "test_P.pkl"
-            else:
-                path = "test_A.pkl"
+            path = "test_P.pkl"
         self.data = self.load_data(path)
         self.len = len(self.data)
         self.corpus = self.batchfy()
@@ -163,15 +153,9 @@ class Table2text_seq:
             total_field.append(field)
             samples.append([source, target, field, p_for, p_bck, table])
         samples.sort(key=lambda x: len(x[0]), reverse=True)
-        if self.type == 0:
-            vocab_path = "vocab.pkl"
-        else:
-            vocab_path = "vocab_D.pkl"
+        vocab_path = "vocab.pkl"
         if self.mode == 0:
-            if self.type == 0:
-                self.vocab = Vocabulary(corpus=total, field=total_field)
-            else:
-                self.vocab = Vocabulary(corpus=total, field=total_field, min_frequency=0)
+            self.vocab = Vocabulary(corpus=total, field=total_field)
             data = {
                 "idx2word": self.vocab.idx2word,
                 "word2idx": self.vocab.word2idx
@@ -192,8 +176,9 @@ class Table2text_seq:
         return corpus
 
     def pad_vector(self, vector, maxlen):
-        padding = maxlen - len(vector)
-        vector.extend([0] * padding)
+        ### YOUR CODE HERE (~2 Lines)
+        vector += [0] * (maxlen - len(vector))
+        ### END YOUR CODE
         return vector
 
     def vectorize(self, sample):
@@ -224,7 +209,6 @@ class Table2text_seq:
             source_len.append(len(source))
             target_len.append(len(target) + 2)
             _o_source, source_oov, _source = self.vocab.vectorize_source(source, table)
-            # print(source_oov)
             _o_target, _target = self.vocab.vectorize_target(target, source_oov, table)
             _o_fields = self.vocab.vectorize_field(field)
             if max_source_oov < len(source_oov):
@@ -244,23 +228,32 @@ class Table2text_seq:
             batch_t.append(_target)
             batch_s.append(_source)
             batch_f.append(_o_fields)
+        
+        ### YOUR CODE HERE (~7 Lines) 
+        ### Using self.pad_vector(vector, maxlen) to pad batch_s, batch_o_s, batch_f, batch_pf, batch_pb, batch_t, batch_o_t
+        max_src_length = max(source_len)
+        max_tar_length = max(target_len)
+        batch_s = [self.pad_vector(i, max_src_length) for i in batch_s]
+        batch_o_s = [self.pad_vector(i, max_src_length) for i in batch_o_s]
+        batch_f = [self.pad_vector(i, max_src_length) for i in batch_f]
+        batch_pf = [self.pad_vector(i, max_src_length) for i in batch_pf]
+        batch_pb = [self.pad_vector(i, max_src_length) for i in batch_pb]
+        batch_t = [self.pad_vector(i, max_tar_length) for i in batch_t]
+        batch_o_t = [self.pad_vector(i, max_tar_length) for i in batch_o_t]
 
-        batch_s = [torch.LongTensor(self.pad_vector(i, max(source_len))) for i in batch_s]
-        batch_o_s = [torch.LongTensor(self.pad_vector(i, max(source_len))) for i in batch_o_s]
-        batch_f = [torch.LongTensor(self.pad_vector(i, max(source_len))) for i in batch_f]
-        batch_pf = [torch.LongTensor(self.pad_vector(i, max(source_len))) for i in batch_pf]
-        batch_pb = [torch.LongTensor(self.pad_vector(i, max(source_len))) for i in batch_pb]
+        ### END YOUR CODE
 
-        batch_t = [torch.LongTensor(self.pad_vector(i, max(target_len))) for i in batch_t]
-        batch_o_t = [torch.LongTensor(self.pad_vector(i, max(target_len))) for i in batch_o_t]
+        ### YOUR CODE HERE (~7 Lines) 
+        ### Convert padded sentence into vecotr
+        batch_o_s = torch.tensor(batch_o_s, dtype=torch.long)
+        batch_f = torch.tensor(batch_f, dtype=torch.long)
+        batch_pf = torch.tensor(batch_pf, dtype=torch.long)
+        batch_pb = torch.tensor(batch_pb, dtype=torch.long)
+        batch_t = torch.tensor(batch_t, dtype=torch.long)
+        batch_s = torch.tensor(batch_s, dtype=torch.long)
+        batch_o_t = torch.tensor(batch_o_t, dtype=torch.long)
 
-        batch_o_s = torch.stack(batch_o_s, dim=0)
-        batch_f = torch.stack(batch_f, dim=0)
-        batch_pf = torch.stack(batch_pf, dim=0)
-        batch_pb = torch.stack(batch_pb, dim=0)
-        batch_t = torch.stack(batch_t, dim=0)
-        batch_s = torch.stack(batch_s, dim=0)
-        batch_o_t = torch.stack(batch_o_t, dim=0)
+        ### END YOUR CODE
         if self.mode != 0:
             targets= [i[:max(target_len)-2] for i in targets]
             sources= [i[:max(source_len)] for i in sources]

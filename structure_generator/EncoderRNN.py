@@ -9,7 +9,9 @@ class EncoderRNN(BaseRNN):
         super(EncoderRNN, self).__init__(vocab_size, hidden_size, input_dropout_p, dropout_p, n_layers, rnn_cell)
 
         self.variable_lengths = variable_lengths
+        # position embedding
         self.pos_embedding = nn.Embedding(pos_size, pemsize, padding_idx=0)
+        # Embedding for batch_s and batch_f
         self.embedding = embedding
         self.rnn = self.rnn_cell((hidden_size + pemsize) * 2, hidden_size, n_layers, batch_first=True,
                                  bidirectional=bidirectional, dropout=dropout_p)
@@ -19,10 +21,14 @@ class EncoderRNN(BaseRNN):
         # get mask for location of PAD
         mask = batch_s.eq(0).detach()
 
+        ### YOUR CODE HERE (~4 Lines) 
+        ### Change batch_s, batch_f, batch_pf, batch_pb into embeddings
         embed_input = self.embedding(batch_s)
         embed_field = self.embedding(batch_f)
         embed_pf = self.pos_embedding(batch_pf)
         embed_pb = self.pos_embedding(batch_pb)
+
+        ### END YOUR CODE
         embed_p = torch.cat((embed_pf, embed_pb), dim=2)
         embed = torch.cat((embed_input, embed_field, embed_p), dim=2)
         embed = self.input_dropout(embed)

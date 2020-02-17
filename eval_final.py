@@ -1,5 +1,4 @@
 import pickle
-import os
 import collections
 import sys
 
@@ -12,7 +11,7 @@ from pycocoevalcap.meteor.meteor import Meteor
 class Evaluate(object):
     def __init__(self):
         self.scorers = [
-            (Bleu(4), ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4"]),
+            (Bleu(4),  ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4"]),
             (Meteor(), "METEOR"),
             (Rouge(), "ROUGE_L")
         ]#,        (Cider(), "CIDEr")
@@ -64,7 +63,7 @@ class Evaluate(object):
 
         # compute scores
         final_scores = self.score(ref, hypo)
-        #"""
+        # """
         # print out scores
         print ('Bleu_1:\t', final_scores['Bleu_1'])
         print ('Bleu_2:\t', final_scores['Bleu_2'])
@@ -72,8 +71,8 @@ class Evaluate(object):
         print ('Bleu_4:\t', final_scores['Bleu_4'])
         print ('METEOR:\t', final_scores['METEOR'])
         print ('ROUGE_L:', final_scores['ROUGE_L'])
-        #print ('CIDEr:\t', final_scores['CIDEr'])
-        #"""
+        # print ('CIDEr:\t', final_scores['CIDEr'])
+        # """
 
         if get_scores:
             return final_scores

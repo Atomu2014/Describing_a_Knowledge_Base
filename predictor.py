@@ -80,12 +80,19 @@ class Predictor(object):
         refs = {}
         cands = {}
         i = 0
+        lines = []
         for batch_idx in range(len(dataset.corpus)):
-            batch_s, batch_o_s, batch_f, batch_pf, batch_pb, _, targets, _, list_oovs, source_len, max_source_oov, w2fs = dataset.get_batch(batch_idx)
+            batch_s, batch_o_s, batch_f, batch_pf, batch_pb, sources, targets, fields, list_oovs, source_len, \
+                max_source_oov, w2fs = dataset.get_batch(batch_idx)
             decoded_outputs, lengths = self.model(batch_s, batch_o_s, max_source_oov, batch_f, batch_pf, batch_pb, source_len, w2fs=w2fs)
             for j in range(len(lengths)):
+                line = {}
+                # line['sources'] = sources[j]
+                # line['fields'] = fields[j]
+                out_seq = []
                 i += 1
                 ref = self.prepare_for_bleu(targets[j])
+                line['refer'] = ref
                 refs[i] = [ref]
                 out_seq = []
                 for k in range(lengths[j]):
@@ -96,10 +103,42 @@ class Predictor(object):
                         out_seq.append(list_oovs[j][symbol-self.vocab.size])
                 out = self.prepare_for_bleu(out_seq)
                 cands[i] = out
+                line['output'] = out
+                lines.append(str(line)+'\n')
 
                 # if i % 2500 == 0:
                 #     print("Percentages:  %.4f" % (i/float(dataset.len)))
-        return cands, refs
+        return lines, cands, refs
+    
+    def preeval_batch_beam(self, dataset):
+        torch.set_grad_enabled(False)
+        refs = {}
+        cands = {}
+        lines = []
+        i = 0
+        for batch_idx in range(len(dataset.corpus)): 
+            batch_s, batch_o_s, batch_f, batch_pf, batch_pb, sources, targets, fields, list_oovs, source_len, \
+                max_source_oov, w2fs = dataset.get_batch(batch_idx)           
+            decoded_outputs = self.model(batch_s, batch_o_s, max_source_oov, batch_f, batch_pf, batch_pb, source_len, w2fs=w2fs, beam=True)
+            i += 1
+            line = {}
+            # line['sources'] = sources[0]
+            # line['fields'] = fields[0]
+            ref = self.prepare_for_bleu(targets[0])
+            # line['refer'] = ref
+            refs[i] = [ref]
+            out_seq = []
+            for symbol in decoded_outputs:
+                if symbol < self.vocab.size:
+                    out_seq.append(self.vocab.idx2word[symbol])
+                else:
+                    out_seq.append(list_oovs[0][symbol-self.vocab.size])
+            out = self.prepare_for_bleu(out_seq)
+            cands[i] = out
+            line['output'] = out
+            lines.append(str(line)+'\n')
+        torch.cuda.empty_cache()
+        return lines, cands, refs
 
     def prepare_for_bleu(self, sentence):
         sent=[x for x in sentence if x != '<PAD>' and x != '<EOS>' and x != '<SOS>']
@@ -108,7 +147,6 @@ class Predictor(object):
 
     def showAttention(self, input_words, output_words, attentions, name, type):
         # Set up figure with colorbar
-        # pp = PdfPages(name)
         plt.rcParams.update({'font.size': 18})
         plt.rcParams["font.family"] = "Times New Roman"
         fig = plt.figure()
@@ -128,11 +166,6 @@ class Predictor(object):
         else:
             ax.set_xlabel("Structured KB")
             ax.set_ylabel("Output")
-
-        # ax.set_xticklabels([''] + input.split(' ') +
-        #                    ['<EOS>'], rotation=90)
-        # ax.set_yticklabels(output_words)
-
         # Show label at every tick
         ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
         ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
@@ -140,8 +173,8 @@ class Predictor(object):
         fig.savefig(name, bbox_inches='tight')
         plt.close(fig)
 
-    def figure(self, batch_s, batch_o_s, batch_f, batch_pf, batch_pb, max_source_oov, source_len, list_oovs, w2fs, type,
-               visual):
+    def figure(self, batch_s, batch_o_s, batch_f, batch_pf, batch_pb, max_source_oov, source_len, list_oovs, w2fs,
+               field):
         torch.set_grad_enabled(False)
         decoded_outputs, lengths, self_matrix, soft = self.model(batch_s, batch_o_s, max_source_oov, batch_f, batch_pf, batch_pb,
                                               source_len, w2fs=w2fs, fig=True)
@@ -159,7 +192,7 @@ class Predictor(object):
         pos = [str(i) for i in batch_pf[0].cpu().tolist()]
         combine = []
         for j in range(len(pos)):
-            combine.append(visual[j] + " : " + pos[j])
-        self.showAttention(pos, combine, self_matrix.cpu(), 'self.png', 0)
-        self.showAttention(type, output[19:25], soft[19:25].cpu(), 'type.png', 1)
+            combine.append(field[j] + " : " + pos[j])
+        self.showAttention(pos, combine, self_matrix.cpu(), 'self-attention.png', 0)
+        self.showAttention(field, output[19:25], soft[19:25].cpu(), 'slot-aware attention.png', 1)
         # return output

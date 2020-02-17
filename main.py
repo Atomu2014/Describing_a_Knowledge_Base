@@ -18,8 +18,8 @@ class Config(object):
     pemsize = 5
     nlayers = 1
     lr = 0.001
-    epochs = 19
-    batch_size = 300
+    epochs = 1
+    batch_size = 20
     dropout = 0
     bidirectional = False
     max_grad_norm = 10
@@ -49,11 +49,7 @@ parser.add_argument('--cuda', action='store_true',
 parser.add_argument('--save', type=str,  default='params.pkl',
                     help='path to save the final model')
 parser.add_argument('--mode', type=int,  default=0,
-                    help='train(0)/predict_individual(1)/predict_file(2)/compute score(3) or keep train (4)')
-parser.add_argument('--type', type=int,  default=0,
-                    help='person(0)/animal(1)')
-parser.add_argument('--mask', type=int,  default=0,
-                    help='false(0)/true(1)')
+                    help='train(0)/predict_individual(1)/predict_file(2)/compute score(3) /beam search score (4)or keep train (5)')
 args = parser.parse_args()
 
 # Set the random seed manually for reproducibility.
@@ -68,27 +64,17 @@ device = torch.device("cuda" if args.cuda else "cpu")
 config = Config()
 # config = ConfigTest()
 
-if args.mask == 1:
-    filepost = "_m"
-else:
-    filepost = ""
-
-if args.type == 1:
-    args.save = 'params_D.pkl'
-    config.epochs = 20
-    filepost += "_A.txt"
-else:
-    filepost += "_P.txt"
-t_dataset = Table2text_seq(0, type=args.type, USE_CUDA=args.cuda, batch_size=config.batch_size)
-v_dataset = Table2text_seq(1, type=args.type, USE_CUDA=args.cuda, batch_size=config.batch_size)
+t_dataset = Table2text_seq(0, USE_CUDA=args.cuda, batch_size=config.batch_size)
+v_dataset = Table2text_seq(1, USE_CUDA=args.cuda, batch_size=config.batch_size)
 print("number of training examples: %d" % t_dataset.len)
+# embedding for both slot type and text
 embedding = nn.Embedding(t_dataset.vocab.size, config.emsize, padding_idx=0)
 encoder = EncoderRNN(t_dataset.vocab.size, embedding, config.emsize, t_dataset.max_p, config.pemsize,
                      input_dropout_p=config.dropout, dropout_p=config.dropout, n_layers=config.nlayers,
                      bidirectional=config.bidirectional, rnn_cell=config.cell, variable_lengths=True)
 decoder = DecoderRNN(t_dataset.vocab.size, embedding, config.emsize, config.pemsize, sos_id=3, eos_id=2, unk_id=1,
                      n_layers=config.nlayers, rnn_cell=config.cell, bidirectional=config.bidirectional,
-                     input_dropout_p=config.dropout, dropout_p=config.dropout, USE_CUDA=args.cuda, mask=args.mask)
+                     input_dropout_p=config.dropout, dropout_p=config.dropout, USE_CUDA=args.cuda)
 model = Seq2seq(encoder, decoder).to(device)
 optimizer = optim.Adam(model.parameters(), lr=config.lr)
 predictor = Predictor(model, v_dataset.vocab, args.cuda)
@@ -114,6 +100,7 @@ def train_epoches(t_dataset, v_dataset, model, n_epochs, teacher_forcing_ratio):
     len_batch = len(train_loader)
     epoch_examples_total = t_dataset.len
     for epoch in range(1, n_epochs + 1):
+        print("Epoch:", epoch)
         model.train(True)
         torch.set_grad_enabled(True)
         epoch_loss = 0
@@ -130,7 +117,7 @@ def train_epoches(t_dataset, v_dataset, model, n_epochs, teacher_forcing_ratio):
         print(log_msg)
         predictor = Predictor(model, v_dataset.vocab, args.cuda)
         print("Start Evaluating")
-        cand, ref = predictor.preeval_batch(v_dataset)
+        _, cand, ref = predictor.preeval_batch(v_dataset)
         print('Result:')
         print('ref: ', ref[1][0])
         print('cand: ', cand[1])
@@ -155,7 +142,7 @@ if __name__ == "__main__":
         # predict sentence
         model.load_state_dict(torch.load(args.save))
         print("model restored")
-        dataset = Table2text_seq(2, type=args.type, USE_CUDA=args.cuda, batch_size=1)
+        dataset = Table2text_seq(2, USE_CUDA=args.cuda, batch_size=1)
         print("Read test data")
         predictor = Predictor(model, dataset.vocab, args.cuda)
         while True:
@@ -178,37 +165,69 @@ if __name__ == "__main__":
             print(outputs)
             print('-'*120)
     elif args.mode == 2:
+        # predict file with greedy decoding
         model.load_state_dict(torch.load(args.save))
         print("model restored")
-        dataset = Table2text_seq(2, type=args.type, USE_CUDA=args.cuda, batch_size=config.batch_size)
+        dataset = Table2text_seq(2, USE_CUDA=args.cuda, batch_size=config.batch_size)
         print("Read test data")
         predictor = Predictor(model, dataset.vocab, args.cuda)
         print("number of test examples: %d" % dataset.len)
         print("Start Evaluating")
         lines = predictor.predict_file(dataset)
         print("Start writing")
-        f_out = open("Output" + filepost, 'w')
+        f_out = open("Output_normal.txt", 'w')
         f_out.writelines(lines)
         f_out.close()
     elif args.mode == 3:
+        # Evaluate score with freedy decoding
         model.load_state_dict(torch.load(args.save))
         print("model restored")
-        dataset = Table2text_seq(2, type=args.type, USE_CUDA=args.cuda, batch_size=config.batch_size)
+        dataset = Table2text_seq(2, USE_CUDA=args.cuda, batch_size=200)
+        print("Read test data")
+        predictor = Predictor(model, dataset.vocab, args.cuda)
+        print("number of test examples: %d" % dataset.len)
+        eval_f = Evaluate()
+        lines, cand, ref = predictor.preeval_batch(dataset)
+        scores = []
+        fields = ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4", "METEOR", "ROUGE_L"]
+
+        print("Start writing")
+        f_out = open("Output_normal.txt", 'w')
+        f_out.writelines(lines)
+        f_out.close()
+        
+        print("Start Evaluating")
+        final_scores = eval_f.evaluate(live=True, cand=cand, ref=ref)
+
+        f_out = open("score_normal.txt", 'w')
+        for field in fields:
+            f_out.write(field + '\t' + str(final_scores[field])+'\n')
+        f_out.close()
+    elif args.mode == 4:
+        # Evaluate score with beam search
+        model.load_state_dict(torch.load(args.save))
+        print("model restored")
+        dataset = Table2text_seq(2, USE_CUDA=args.cuda, batch_size=1)
         print("Read test data")
         predictor = Predictor(model, dataset.vocab, args.cuda)
         print("number of test examples: %d" % dataset.len)
         eval_f = Evaluate()
         print("Start Evaluating")
-        cand, ref = predictor.preeval_batch(dataset)
+        lines, cand, ref = predictor.preeval_batch_beam(dataset)
+        print("Start writing")
+        f_out = open("Output_beam.txt", 'w')
+        f_out.writelines(lines)
+        f_out.close()
         scores = []
         fields = ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4", "METEOR", "ROUGE_L"]
         final_scores = eval_f.evaluate(live=True, cand=cand, ref=ref)
 
-        f_out = open("score" + filepost, 'w')
+        f_out = open("score_beam.txt", 'w')
         for field in fields:
             f_out.write(field + '\t' + str(final_scores[field])+'\n')
         f_out.close()
-    elif args.mode == 4:
+
+    elif args.mode == 5:
         # load and keep training
         model.load_state_dict(torch.load(args.save))
         print("model restored")
@@ -219,15 +238,15 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             print('-' * 89)
             print('Exiting from training early')
-        dataset = Table2text_seq(2, type=args.type, USE_CUDA=args.cuda, batch_size=config.batch_size)
+        dataset = Table2text_seq(2, USE_CUDA=args.cuda, batch_size=config.batch_size)
         print("Read test data")
         predictor = Predictor(model, dataset.vocab, args.cuda)
         print("number of test examples: %d" % dataset.len)
         eval_f = Evaluate()
-        print("Start Evaluating")
         cand, ref = predictor.preeval_batch(dataset)
         scores = []
         fields = ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4", "METEOR", "ROUGE_L"]
+        print("Start Evaluating")
         final_scores = eval_f.evaluate(live=True, cand=cand, ref=ref)
         x = input('Save (1) or not')
         if x == '1':
