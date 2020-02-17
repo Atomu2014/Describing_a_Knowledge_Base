@@ -10,20 +10,7 @@ from structure_generator.DecoderRNN import DecoderRNN
 from structure_generator.seq2seq import Seq2seq
 from eval_final import Evaluate
 from eval import Evaluate_test
-
-
-class Config(object):
-    cell = "GRU"
-    emsize = 256
-    pemsize = 5
-    nlayers = 1
-    lr = 0.001
-    epochs = 1
-    batch_size = 20
-    dropout = 0
-    bidirectional = False
-    max_grad_norm = 10
-    max_len = 100
+import os
 
 
 class ConfigTest(object):
@@ -46,11 +33,33 @@ parser.add_argument('--seed', type=int, default=1111,
                     help='random seed')
 parser.add_argument('--cuda', action='store_true',
                     help='use CUDA')
-parser.add_argument('--save', type=str,  default='params.pkl',
+parser.add_argument('--output_dir', type=str,  default='0216',
                     help='path to save the final model')
 parser.add_argument('--mode', type=int,  default=0,
                     help='train(0)/predict_individual(1)/predict_file(2)/compute score(3) /beam search score (4)or keep train (5)')
+parser.add_argument('--epochs', type=int, default=1)
+parser.add_argument('--batch_size', type=int, default=20)
+parser.add_argument('--lr', type=float, default=0.001)
 args = parser.parse_args()
+args.output_dir = os.path.join('output', args.output_dir)
+
+if not os.path.exists(args.output_dir):
+    os.makedirs(args.output_dir)
+
+
+class Config(object):
+    cell = "GRU"
+    emsize = 256
+    pemsize = 5
+    nlayers = 1
+    lr = args.lr
+    epochs = args.epochs
+    batch_size = args.batch_size
+    dropout = 0
+    bidirectional = False
+    max_grad_norm = 10
+    max_len = 100
+
 
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
@@ -113,7 +122,7 @@ def train_epoches(t_dataset, v_dataset, model, n_epochs, teacher_forcing_ratio):
             )
             sys.stdout.flush()
         epoch_loss /= epoch_examples_total
-        log_msg = "Finished epoch %d with losses: %.4f" % (epoch, epoch_loss)
+        log_msg = "\nFinished epoch %d with losses: %.4f" % (epoch, epoch_loss)
         print(log_msg)
         predictor = Predictor(model, v_dataset.vocab, args.cuda)
         print("Start Evaluating")
@@ -124,7 +133,7 @@ def train_epoches(t_dataset, v_dataset, model, n_epochs, teacher_forcing_ratio):
         final_scores = eval_f.evaluate(live=True, cand=cand, ref=ref)
         epoch_score = 2*final_scores['ROUGE_L']*final_scores['Bleu_4']/(final_scores['Bleu_4']+ final_scores['ROUGE_L'])
         if epoch_score > best_dev:
-            torch.save(model.state_dict(), args.save)
+            torch.save(model.state_dict(), os.path.join(args.output_dir, 'params.pkl'))
             print("model saved")
             best_dev = epoch_score
 
@@ -140,7 +149,7 @@ if __name__ == "__main__":
             print('Exiting from training early')
     elif args.mode == 1:
         # predict sentence
-        model.load_state_dict(torch.load(args.save))
+        model.load_state_dict(torch.load(os.path.join(args.output_dir, 'params.pkl')))
         print("model restored")
         dataset = Table2text_seq(2, USE_CUDA=args.cuda, batch_size=1)
         print("Read test data")
@@ -166,7 +175,7 @@ if __name__ == "__main__":
             print('-'*120)
     elif args.mode == 2:
         # predict file with greedy decoding
-        model.load_state_dict(torch.load(args.save))
+        model.load_state_dict(torch.load(os.path.join(args.output_dir, 'params.pkl')))
         print("model restored")
         dataset = Table2text_seq(2, USE_CUDA=args.cuda, batch_size=config.batch_size)
         print("Read test data")
@@ -175,12 +184,12 @@ if __name__ == "__main__":
         print("Start Evaluating")
         lines = predictor.predict_file(dataset)
         print("Start writing")
-        f_out = open("Output_normal.txt", 'w')
+        f_out = open(os.path.join(args.output_dir, "Output_normal.txt"), 'w')
         f_out.writelines(lines)
         f_out.close()
     elif args.mode == 3:
         # Evaluate score with freedy decoding
-        model.load_state_dict(torch.load(args.save))
+        model.load_state_dict(torch.load(os.path.join(args.output_dir, 'params.pkl')))
         print("model restored")
         dataset = Table2text_seq(2, USE_CUDA=args.cuda, batch_size=200)
         print("Read test data")
@@ -192,20 +201,20 @@ if __name__ == "__main__":
         fields = ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4", "METEOR", "ROUGE_L"]
 
         print("Start writing")
-        f_out = open("Output_normal.txt", 'w')
+        f_out = open(os.path.join(args.output_dir, "Output_normal.txt"), 'w')
         f_out.writelines(lines)
         f_out.close()
         
         print("Start Evaluating")
         final_scores = eval_f.evaluate(live=True, cand=cand, ref=ref)
 
-        f_out = open("score_normal.txt", 'w')
+        f_out = open(os.path.join(args.output_dir, "score_normal.txt"), 'w')
         for field in fields:
             f_out.write(field + '\t' + str(final_scores[field])+'\n')
         f_out.close()
     elif args.mode == 4:
         # Evaluate score with beam search
-        model.load_state_dict(torch.load(args.save))
+        model.load_state_dict(torch.load(os.path.join(args.output_dir, 'params.pkl')))
         print("model restored")
         dataset = Table2text_seq(2, USE_CUDA=args.cuda, batch_size=1)
         print("Read test data")
@@ -215,21 +224,21 @@ if __name__ == "__main__":
         print("Start Evaluating")
         lines, cand, ref = predictor.preeval_batch_beam(dataset)
         print("Start writing")
-        f_out = open("Output_beam.txt", 'w')
+        f_out = open(os.path.join(args.output_dir, "Output_beam.txt"), 'w')
         f_out.writelines(lines)
         f_out.close()
         scores = []
         fields = ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4", "METEOR", "ROUGE_L"]
         final_scores = eval_f.evaluate(live=True, cand=cand, ref=ref)
 
-        f_out = open("score_beam.txt", 'w')
+        f_out = open(os.path.join(args.output_dir, "score_beam.txt"), 'w')
         for field in fields:
             f_out.write(field + '\t' + str(final_scores[field])+'\n')
         f_out.close()
 
     elif args.mode == 5:
         # load and keep training
-        model.load_state_dict(torch.load(args.save))
+        model.load_state_dict(torch.load(os.path.join(args.output_dir, 'params.pkl')))
         print("model restored")
         # train
         try:
@@ -250,6 +259,6 @@ if __name__ == "__main__":
         final_scores = eval_f.evaluate(live=True, cand=cand, ref=ref)
         x = input('Save (1) or not')
         if x == '1':
-            torch.save(model.state_dict(), args.save)
+            torch.save(model.state_dict(), os.path.join(args.output_dir, 'params.pkl'))
             print("model saved")
 

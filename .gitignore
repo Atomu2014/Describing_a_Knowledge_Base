@@ -108,3 +108,4 @@ venv.bak/
 *.pkl
 Wiki_dataset/
 *.txt
+output/
