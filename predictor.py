@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 plt.switch_backend('Agg')  #TkAgg
 import matplotlib.ticker as ticker
 from matplotlib.backends.backend_pdf import PdfPages
+from tqdm import tqdm
 
 class Predictor(object):
     def __init__(self, model, vocab, USE_CUDA):
@@ -116,7 +117,7 @@ class Predictor(object):
         cands = {}
         lines = []
         i = 0
-        for batch_idx in range(len(dataset.corpus)): 
+        for batch_idx in tqdm(range(len(dataset.corpus))):
             batch_s, batch_o_s, batch_f, batch_pf, batch_pb, sources, targets, fields, list_oovs, source_len, \
                 max_source_oov, w2fs = dataset.get_batch(batch_idx)           
             decoded_outputs = self.model(batch_s, batch_o_s, max_source_oov, batch_f, batch_pf, batch_pb, source_len, w2fs=w2fs, beam=True)
